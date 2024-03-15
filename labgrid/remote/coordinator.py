@@ -19,6 +19,9 @@ from .scheduler import TagSet, schedule
 from ..util import atomic_replace, yaml
 
 
+monkey_patch_max_msg_payload_size_ws_option()
+
+
 class Action(Enum):
     ADD = 0
     DEL = 1
@@ -133,13 +136,10 @@ class CoordinatorComponent(ApplicationSession):
         enable_tcp_nodelay(self)
         self.join(
             self.config.realm,
-            authmethods=["anonymous", "ticket"],
+            authmethods=["anonymous"],
             authid="coordinator",
             authextra={"authid": "coordinator"},
         )
-
-    def onChallenge(self, challenge):
-        return "dummy-ticket"
 
     @locked
     async def onJoin(self, details):
@@ -314,7 +314,7 @@ class CoordinatorComponent(ApplicationSession):
 
     def load(self):
         try:
-            self.place = {}
+            self.places = {}
             with open('places.yaml', 'r') as f:
                 self.places = yaml.load(f.read())
             for placename, config in self.places.items():

@@ -18,16 +18,13 @@ import attr
 from autobahn.asyncio.wamp import ApplicationRunner, ApplicationSession
 
 from .config import ResourceConfig
-from .common import ResourceEntry, enable_tcp_nodelay
-from ..util import get_free_port
-
-try:
-    import pkg_resources
-    __version__ = pkg_resources.get_distribution('labgrid').version
-except pkg_resources.DistributionNotFound:
-    __version__ = "unknown"
+from .common import ResourceEntry, enable_tcp_nodelay, monkey_patch_max_msg_payload_size_ws_option
+from ..util import get_free_port, labgrid_version
 
 
+monkey_patch_max_msg_payload_size_ws_option()
+
+__version__ = labgrid_version()
 exports: Dict[str, Type[ResourceEntry]] = {}
 reexec = False
 
@@ -700,6 +697,26 @@ class AndroidNetFastbootExport(ResourceExport):
 
 exports["AndroidNetFastboot"] = AndroidNetFastbootExport
 
+@attr.s(eq=False)
+class YKUSHPowerPortExport(ResourceExport):
+    """ResourceExport for YKUSHPowerPort devices"""
+
+    def __attrs_post_init__(self):
+        super().__attrs_post_init__()
+        local_cls_name = self.cls
+        self.data['cls'] = f"Network{local_cls_name}"
+        from ..resource import ykushpowerport
+        local_cls = getattr(ykushpowerport, local_cls_name)
+        self.local = local_cls(target=None, name=None, **self.local_params)
+
+    def _get_params(self):
+        return {
+            "host": self.host,
+            **self.local_params
+        }
+
+exports["YKUSHPowerPort"] = YKUSHPowerPortExport
+
 class ExporterSession(ApplicationSession):
     def onConnect(self):
         """Set up internal datastructures on successful connection:
@@ -902,6 +919,12 @@ def main():
         help='hostname (or IP) published for accessing resources (defaults to the system hostname)'
     )
     parser.add_argument(
+        '--fqdn',
+        action='store_true',
+        default=False,
+        help='Use fully qualified domain name as default for hostname'
+    )
+    parser.add_argument(
         '-d',
         '--debug',
         action='store_true',
@@ -928,7 +951,7 @@ def main():
 
     extra = {
         'name': args.name or gethostname(),
-        'hostname': args.hostname or gethostname(),
+        'hostname': args.hostname or (getfqdn() if args.fqdn else gethostname()),
         'resources': args.resources,
         'isolated': args.isolated
     }

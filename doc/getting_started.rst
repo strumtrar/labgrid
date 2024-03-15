@@ -25,6 +25,16 @@ In many cases, the easiest way is to install labgrid into a virtualenv:
     $ source labgrid-venv/bin/activate
     labgrid-venv $ pip install --upgrade pip
 
+Install Latest Release
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: bash
+
+    labgrid-venv $ pip install labgrid
+
+Install Development State
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
 Start by cloning the repository and installing labgrid:
 
 .. code-block:: bash
@@ -37,13 +47,15 @@ Start by cloning the repository and installing labgrid:
    (RFC2217), it is highly recommended to uninstall pyserial after installation
    and replace it with the pyserial version from the labgrid project:
 
-   https://github.com/labgrid-project/pyserial/releases/tag/v3.4.0.1
+   https://github.com/labgrid-project/pyserial/tags
 
    This pyserial version has two fixes for an Issue we found with Serial over IP
    multiplexers. Additionally it reduces the Serial over IP traffic considerably
    since the port is not reconfigured when labgrid changes the timeout (which is
    done inside the library a lot).
 
+Test Installation
+~~~~~~~~~~~~~~~~~
 
 Test your installation by running:
 
@@ -372,7 +384,8 @@ Follow these instructions to install the systemd files on your machine(s):
 #. Adjust the ``SupplementaryGroups`` option in the
    :file:`labgrid-exporter.service` file to your distribution so that the
    exporter gains read and write access on TTY devices (for ``ser2net``); most
-   often, this group is called ``dialout`` or ``tty``.
+   often, these groups are called ``dialout``, ``plugdev`` or ``tty``.
+   Depending on your udev configuration, you may need multiple groups.
 #. Set the coordinator URL the exporter should connect to by overriding the
    exporter service file; i.e. execute ``systemctl edit
    labgrid-exporter.service`` and add the following snippet:

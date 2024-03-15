@@ -1,5 +1,4 @@
 import fcntl
-import logging
 import os
 import select
 import shlex
@@ -25,12 +24,11 @@ class ExternalConsoleDriver(ConsoleExpectMixin, Driver, ConsoleProtocol):
 
     def __attrs_post_init__(self):
         super().__attrs_post_init__()
-        self.logger = logging.getLogger(f"{self}({self.target})")
         self.status = 0
         self._child = None
 
     def open(self):
-        """Starts the subprocess, does nothing if it is already closed"""
+        """Starts the subprocess, does nothing if it is already open"""
         if self.status:
             return
         cmd = shlex.split(self.cmd)

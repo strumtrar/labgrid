@@ -1,6 +1,5 @@
 """The SSHDriver uses SSH as a transport to implement CommandProtocol and FileTransferProtocol"""
 import contextlib
-import logging
 import os
 import re
 import stat
@@ -9,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from functools import cached_property
 
 import attr
 
@@ -34,11 +34,21 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
     stderr_merge = attr.ib(default=False, validator=attr.validators.instance_of(bool))
     connection_timeout = attr.ib(default=float(get_ssh_connect_timeout()), validator=attr.validators.instance_of(float))
     explicit_sftp_mode = attr.ib(default=False, validator=attr.validators.instance_of(bool))
+    explicit_scp_mode = attr.ib(default=False, validator=attr.validators.instance_of(bool))
+    username = attr.ib(default="", validator=attr.validators.instance_of(str))
+    password = attr.ib(default="", validator=attr.validators.instance_of(str))
 
     def __attrs_post_init__(self):
         super().__attrs_post_init__()
-        self.logger = logging.getLogger(f"{self}({self.target})")
         self._keepalive = None
+
+    def _get_username(self):
+        """Get the username from this class or from NetworkService"""
+        return self.username or self.networkservice.username
+
+    def _get_password(self):
+        """Get the password from this class or from NetworkService"""
+        return self.password or self.networkservice.password
 
     def on_activate(self):
         self.ssh_prefix = ["-o", "LogLevel=ERROR"]
@@ -47,7 +57,7 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
             if self.target.env:
                 keyfile_path = self.target.env.config.resolve_path(self.keyfile)
             self.ssh_prefix += ["-i", keyfile_path ]
-        if not self.networkservice.password:
+        if not self._get_password():
             self.ssh_prefix += ["-o", "PasswordAuthentication=no"]
 
         self.control = self._start_own_master()
@@ -99,7 +109,7 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
                  "-o", "ControlPersist=300", "-o",
                  "UserKnownHostsFile=/dev/null", "-o", "StrictHostKeyChecking=no",
                  "-o", "ServerAliveInterval=15", "-MN", "-S", control.replace('%', '%%'), "-p",
-                 str(self.networkservice.port), "-l", self.networkservice.username,
+                 str(self.networkservice.port), "-l", self._get_username(),
                  self.networkservice.address]
 
         # proxy via the exporter if we have an ifname suffix
@@ -119,14 +129,14 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
 
         env = os.environ.copy()
         pass_file = ''
-        if self.networkservice.password:
+        if self._get_password():
             fd, pass_file = tempfile.mkstemp()
             os.fchmod(fd, stat.S_IRWXU)
             #with openssh>=8.4 SSH_ASKPASS_REQUIRE can be used to force SSH_ASK_PASS
             #openssh<8.4 requires the DISPLAY var and a detached process with start_new_session=True
             env = {'SSH_ASKPASS': pass_file, 'DISPLAY':'', 'SSH_ASKPASS_REQUIRE':'force'}
             with open(fd, 'w') as f:
-                f.write("#!/bin/sh\necho " + shlex.quote(self.networkservice.password))
+                f.write("#!/bin/sh\necho " + shlex.quote(self._get_password()))
 
         self.process = subprocess.Popen(args, env=env,
                                         stdout=subprocess.PIPE,
@@ -163,7 +173,7 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
                 f"Subprocess timed out [{subprocess_timeout}s] while executing {args}",
             )
         finally:
-            if self.networkservice.password and os.path.exists(pass_file):
+            if self._get_password() and os.path.exists(pass_file):
                 os.remove(pass_file)
 
         if not os.path.exists(control):
@@ -194,7 +204,7 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
             raise ExecutionError("Keepalive no longer running")
 
         complete_cmd = ["ssh", "-x", *self.ssh_prefix,
-                        "-p", str(self.networkservice.port), "-l", self.networkservice.username,
+                        "-p", str(self.networkservice.port), "-l", self._get_username(),
                         self.networkservice.address
                         ] + cmd.split(" ")
         self.logger.debug("Sending command: %s", complete_cmd)
@@ -311,6 +321,34 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
             yield
 
     @Driver.check_active
+    @contextlib.contextmanager
+    def forward_unix_socket(self, unixsocket, localport=None):
+        """Forward a unix socket on the target to a local port
+
+        A context manager that keeps a unix socket forwarded to a local port as
+        long as the context remains valid. A connection can be made to the
+        remote socket on the target device will be forwarded to the returned
+        local port on localhost
+
+        usage:
+            with ssh.forward_unix_socket("/run/docker.sock") as localport:
+                # Use localhost:localport here to connect to the socket on the
+                # target
+
+        returns:
+        localport
+        """
+        if not self._check_keepalive():
+            raise ExecutionError("Keepalive no longer running")
+
+        if localport is None:
+            localport = get_free_port()
+
+        forward = f"-L{localport:d}:{unixsocket:s}"
+        with self._forward(forward):
+            yield localport
+
+    @Driver.check_active
     @step(args=['src', 'dst'])
     def scp(self, *, src, dst):
         if not self._check_keepalive():
@@ -328,6 +366,12 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
                 "-o", f"ControlPath={self.control.replace('%', '%%')}",
                 src, dst,
         ]
+        
+        if self.explicit_sftp_mode and self._scp_supports_explicit_sftp_mode():
+            complete_cmd.insert(1, "-s")
+        if self.explicit_scp_mode and self._scp_supports_explicit_scp_mode():
+            complete_cmd.insert(1, "-O")
+
         self.logger.info("Running command: %s", complete_cmd)
         sub = subprocess.Popen(
             complete_cmd,
@@ -399,10 +443,14 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
         """The SSHDriver is always connected, return 1"""
         return 1
 
-    def _scp_supports_explicit_sftp_mode(self):
+    @cached_property
+    def _ssh_version(self):
         version = subprocess.run(["ssh", "-V"], capture_output=True, text=True)
         version = re.match(r"^OpenSSH_(\d+)\.(\d+)", version.stderr)
-        major, minor = map(int, version.groups())
+        return map(int, version.groups())
+
+    def _scp_supports_explicit_sftp_mode(self):
+        major, minor = self._ssh_version
 
         # OpenSSH >= 8.6 supports explicitly using the SFTP protocol via -s
         if major == 8 and minor >= 6:
@@ -412,20 +460,30 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
             return False
         raise Exception(f"OpenSSH version {major}.{minor} does not support explicit SFTP mode")
 
+    def _scp_supports_explicit_scp_mode(self):
+        major, minor = self._ssh_version
+
+        # OpenSSH >= 9.0 default to the SFTP protocol
+        if major >= 9:
+            return True
+        raise Exception(f"OpenSSH version {major}.{minor} does not support explicit SCP mode")
+
     @Driver.check_active
     @step(args=['filename', 'remotepath'])
     def put(self, filename, remotepath=''):
-        ssh_prefix = self.ssh_prefix
-        if self.explicit_sftp_mode and self._scp_supports_explicit_sftp_mode():
-            ssh_prefix.append("-s")
         transfer_cmd = [
             "scp",
-            *ssh_prefix,
+            *self.ssh_prefix,
             "-P", str(self.networkservice.port),
             "-r",
             filename,
-            f"{self.networkservice.username}@{self.networkservice.address}:{remotepath}"
+            f"{self._get_username()}@{self.networkservice.address}:{remotepath}"
             ]
+
+        if self.explicit_sftp_mode and self._scp_supports_explicit_sftp_mode():
+            transfer_cmd.insert(1, "-s")
+        if self.explicit_scp_mode and self._scp_supports_explicit_scp_mode():
+            transfer_cmd.insert(1, "-O")
 
         try:
             sub = subprocess.call(
@@ -443,17 +501,19 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
     @Driver.check_active
     @step(args=['filename', 'destination'])
     def get(self, filename, destination="."):
-        ssh_prefix = self.ssh_prefix
-        if self.explicit_sftp_mode and self._scp_supports_explicit_sftp_mode():
-            ssh_prefix.append("-s")
         transfer_cmd = [
             "scp",
-            *ssh_prefix,
+            *self.ssh_prefix,
             "-P", str(self.networkservice.port),
             "-r",
-            f"{self.networkservice.username}@{self.networkservice.address}:{filename}",
+            f"{self._get_username()}@{self.networkservice.address}:{filename}",
             destination
             ]
+
+        if self.explicit_sftp_mode and self._scp_supports_explicit_sftp_mode():
+            transfer_cmd.insert(1, "-s")
+        if self.explicit_scp_mode and self._scp_supports_explicit_scp_mode():
+            transfer_cmd.insert(1, "-O")
 
         try:
             sub = subprocess.call(
@@ -470,7 +530,7 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
 
     def _cleanup_own_master(self):
         """Exit the controlmaster and delete the tmpdir"""
-        complete_cmd = f"ssh -x -o ControlPath={self.control.replace('%', '%%')} -O exit -p {self.networkservice.port} -l {self.networkservice.username} {self.networkservice.address}".split(' ')  # pylint: disable=line-too-long
+        complete_cmd = f"ssh -x -o ControlPath={self.control.replace('%', '%%')} -O exit -p {self.networkservice.port} -l {self._get_username()} {self.networkservice.address}".split(' ')  # pylint: disable=line-too-long
         res = subprocess.call(
             complete_cmd,
             stdin=subprocess.DEVNULL,
@@ -480,9 +540,10 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
 
         if res != 0:
             self.logger.info("Socket already closed")
-        shutil.rmtree(self.tmpdir)
 
         self.process.communicate()
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _start_keepalive(self):
         """Starts a keepalive connection via the own or external master."""
@@ -493,7 +554,8 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
             args,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            encoding="utf-8",
         )
 
         self.logger.debug('Started keepalive for %s', self.networkservice.address)
@@ -506,12 +568,19 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
 
         self.logger.debug('Stopping keepalive for %s', self.networkservice.address)
 
+        stdout = None
         try:
-            self._keepalive.communicate(timeout=60)
+            stdout, _ = self._keepalive.communicate(timeout=60)
         except subprocess.TimeoutExpired:
             self._keepalive.kill()
-
-        try:
-            self._keepalive.wait(timeout=60)
+            try:
+                # Try again to get output
+                stdout, _ = self._keepalive.communicate(timeout=60)
+            except subprocess.TimeoutExpired:
+                self.logger.warning("ssh keepalive for %s timed out during termination", self.networkservice.address)
         finally:
             self._keepalive = None
+
+        if stdout:
+            for line in stdout.splitlines():
+                self.logger.warning("Keepalive %s: %s", self.networkservice.address, line)

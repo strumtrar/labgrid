@@ -47,6 +47,7 @@ import os
 import labgrid.remote.client
 import time
 import asyncio
+import txaio
 
 
 def inc_gauge(gauges, key):
@@ -141,6 +142,9 @@ def main():
 
     args = parser.parse_args()
 
+    txaio.use_asyncio()
+    txaio.config.loop = asyncio.get_event_loop()
+
     statsd_client = None
     gauges = {}
 
@@ -177,13 +181,15 @@ def main():
                 os.environ.get("LG_CROSSBAR_REALM", "realm1"),
                 extra,
             )
-
-            session.loop.run_until_complete(
-                asyncio.gather(
-                    report_places(session, args.tags, gauges),
-                    report_reservations(session, args.tags, gauges),
+            try:
+                session.loop.run_until_complete(
+                    asyncio.gather(
+                        report_places(session, args.tags, gauges),
+                        report_reservations(session, args.tags, gauges),
+                    )
                 )
-            )
+            finally:
+                session.leave()
         except labgrid.remote.client.Error as e:
             print(f"Error communicating with labgrid: {e}")
             continue

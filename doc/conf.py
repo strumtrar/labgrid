@@ -40,7 +40,8 @@ extensions = ['sphinx.ext.autodoc',
               'sphinx.ext.napoleon',
               'sphinx.ext.coverage',
               'sphinx.ext.viewcode',
-              'sphinx.ext.autosectionlabel']
+              'sphinx.ext.autosectionlabel',
+              'sphinx_rtd_theme']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['.templates']
@@ -56,7 +57,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'labgrid'
-copyright = '2016-2023 Pengutronix, Jan Luebbe and Rouven Czerwinski'
+copyright = '2016-2024 Pengutronix, Jan Luebbe and Rouven Czerwinski'
 author = 'Jan Luebbe, Rouven Czerwinski'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -185,6 +186,7 @@ autodoc_mock_imports = ['onewire',
                         'autobahn',
                         'autobahn.asyncio',
                         'autobahn.asyncio.wamp',
+                        'autobahn.asyncio.websocket',
                         'autobahn.wamp',
                         'autobahn.wamp.types',
                         'autobahn.twisted',

@@ -8,12 +8,18 @@ from ..consoleloggingreporter import ConsoleLoggingReporter
 from ..util.helper import processwrapper
 from ..logging import StepFormatter, StepLogger
 
+LABGRID_ENV_KEY = pytest.StashKey[Environment]()
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_cmdline_main(config):
     def set_cli_log_level(level):
         nonlocal config
 
-        current_level = config.getoption("log_cli_level") or config.getini("log_cli_level")
+        try:
+            current_level = config.getoption("log_cli_level") or config.getini("log_cli_level")
+        except ValueError:
+            return
         print(f"current_level: {current_level}")
 
         if isinstance(current_level, str):
@@ -36,28 +42,32 @@ def pytest_cmdline_main(config):
         set_cli_log_level(logging.INFO)
 
 
+def configure_pytest_logging(config, plugin):
+    plugin.log_cli_handler.formatter.add_color_level(logging.CONSOLE, "blue")
+    plugin.log_cli_handler.setFormatter(StepFormatter(
+        color=config.option.lg_colored_steps,
+        parent=plugin.log_cli_handler.formatter,
+    ))
+    plugin.log_file_handler.setFormatter(StepFormatter(
+        parent=plugin.log_file_handler.formatter,
+    ))
+
+    # Might be the same formatter instance, so get a reference for both before
+    # changing either
+    report_formatter = plugin.report_handler.formatter
+    caplog_formatter = plugin.caplog_handler.formatter
+
+    plugin.report_handler.setFormatter(StepFormatter(parent=report_formatter))
+    plugin.report_handler.setFormatter(StepFormatter(parent=caplog_formatter))
+
 @pytest.hookimpl(trylast=True)
 def pytest_configure(config):
     StepLogger.start()
     config.add_cleanup(StepLogger.stop)
 
     logging_plugin = config.pluginmanager.getplugin('logging-plugin')
-    logging_plugin.log_cli_handler.formatter.add_color_level(logging.CONSOLE, "blue")
-    logging_plugin.log_cli_handler.setFormatter(StepFormatter(
-        color=config.option.lg_colored_steps,
-        parent=logging_plugin.log_cli_handler.formatter,
-    ))
-    logging_plugin.log_file_handler.setFormatter(StepFormatter(
-        parent=logging_plugin.log_file_handler.formatter,
-    ))
-
-    # Might be the same formatter instance, so get a reference for both before
-    # changing either
-    report_formatter = logging_plugin.report_handler.formatter
-    caplog_formatter = logging_plugin.caplog_handler.formatter
-
-    logging_plugin.report_handler.setFormatter(StepFormatter(parent=report_formatter))
-    logging_plugin.report_handler.setFormatter(StepFormatter(parent=caplog_formatter))
+    if logging_plugin:
+        configure_pytest_logging(config, logging_plugin)
 
     config.addinivalue_line("markers",
                             "lg_feature: marker for labgrid feature flags")
@@ -82,7 +92,7 @@ def pytest_configure(config):
         env = Environment(config_file=lg_env)
         if lg_coordinator is not None:
             env.config.set_option('crossbar_url', lg_coordinator)
-    config._labgrid_env = env
+    config.stash[LABGRID_ENV_KEY] = env
 
     processwrapper.enable_logging()
 
@@ -90,7 +100,7 @@ def pytest_configure(config):
 def pytest_collection_modifyitems(config, items):
     """This function matches function feature flags with those found in the
     environment and disables the item if no match is found"""
-    env = config._labgrid_env
+    env = config.stash[LABGRID_ENV_KEY]
 
     if not env:
         return

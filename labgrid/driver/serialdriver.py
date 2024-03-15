@@ -1,5 +1,3 @@
-import logging
-
 import attr
 from pexpect import TIMEOUT
 import serial
@@ -26,7 +24,6 @@ class SerialDriver(ConsoleExpectMixin, Driver, ConsoleProtocol):
 
     def __attrs_post_init__(self):
         super().__attrs_post_init__()
-        self.logger = logging.getLogger(f"{self}({self.target})")
         if isinstance(self.port, SerialPort):
             self.serial = serial.Serial()
         else:
@@ -99,7 +96,7 @@ class SerialDriver(ConsoleExpectMixin, Driver, ConsoleProtocol):
         return self.serial.write(data)
 
     def open(self):
-        """Opens the serialport, does nothing if it is already closed"""
+        """Opens the serialport, does nothing if it is already open"""
         if not self.status:
             try:
                 self.serial.open()

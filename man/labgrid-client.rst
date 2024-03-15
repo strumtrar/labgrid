@@ -175,7 +175,7 @@ LABGRID-CLIENT COMMANDS
 
 ``env``                         Generate a labgrid environment file for a place
 
-``power (pw)`` action           Change (or get) a place's power status, where action is one of get, on, off, status
+``power (pw)`` action           Change (or get) a place's power status, where action is one of get, on, off, cycle
 
 ``io`` action                   Interact with GPIO (OneWire, relays, ...) devices, where action is one of high, low, get
 
@@ -222,6 +222,8 @@ LABGRID-CLIENT COMMANDS
 ``reservations``                List current reservations
 
 ``export`` filename             Export driver information to file (needs environment with drivers)
+
+``version``                     Print the labgrid version
 
 ADDING NAMED RESOURCES
 ----------------------

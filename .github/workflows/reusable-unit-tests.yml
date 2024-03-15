@@ -15,14 +15,14 @@ jobs:
     runs-on: ubuntu-22.04
     continue-on-error: false
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         ref: ${{ inputs.branch }}
     - name: Set up Python ${{ inputs.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}
-    - uses: actions/cache@v3
+    - uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
@@ -60,9 +60,12 @@ jobs:
     - name: Build documentation
       run: |
         make -C doc clean
-        make -C doc doctest
-        make -C doc html
+        make -C doc doctest SPHINXOPTS=-W
+        make -C doc html SPHINXOPTS=-W
         make -C man clean
         make -C man all
         git --no-pager diff --exit-code
+        # check README.rst separately
+        pip install rstcheck
+        rstcheck --ignore-languages=bash --report-level=WARNING README.rst
     - uses: codecov/codecov-action@v3

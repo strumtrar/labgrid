@@ -23,7 +23,7 @@ from .common import Driver
 from .qemudriver import QEMUDriver
 from .modbusdriver import ModbusCoilDriver
 from .modbusrtudriver import ModbusRTUDriver
-from .sigrokdriver import SigrokDriver, SigrokPowerDriver
+from .sigrokdriver import SigrokDriver, SigrokPowerDriver, SigrokDmmDriver
 from .usbstoragedriver import USBStorageDriver, NetworkUSBStorageDriver, Mode
 from .resetdriver import DigitalOutputResetDriver
 from .gpiodriver import GpioDigitalOutputDriver
@@ -40,9 +40,11 @@ from .usbaudiodriver import USBAudioInputDriver
 from .usbvideodriver import USBVideoDriver
 from .httpvideodriver import HTTPVideoDriver
 from .networkinterfacedriver import NetworkInterfaceDriver
-from .provider import HTTPProviderDriver, NFSPProviderDriver, TFTPProviderDriver
+from .provider import HTTPProviderDriver, NFSProviderDriver, TFTPProviderDriver
+from .rawnetworkinterfacedriver import RawNetworkInterfaceDriver
 from .mqtt import TasmotaPowerDriver
 from .manualswitchdriver import ManualSwitchDriver
 from .usbtmcdriver import USBTMCDriver
 from .deditecrelaisdriver import DeditecRelaisDriver
 from .dediprogflashdriver import DediprogFlashDriver
+from .httpdigitaloutput import HttpDigitalOutputDriver

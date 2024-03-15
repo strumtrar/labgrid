@@ -9,7 +9,7 @@ labgrid test configuration files
 :Author: Rouven Czerwinski <r.czerwinski@pengutronix.de>
 :organization: Labgrid-Project
 :Date:   2017-04-15
-:Copyright: Copyright (C) 2016-2023 Pengutronix. This library is free software;
+:Copyright: Copyright (C) 2016-2024 Pengutronix. This library is free software;
             you can redistribute it and/or modify it under the terms of the GNU
             Lesser General Public License as published by the Free Software
             Foundation; either version 2.1 of the License, or (at your option)
@@ -158,6 +158,10 @@ TOOLS KEYS
 ``uuu-loader``
     Path to the uuu-loader binary, used by the UUUDriver.
     See: https://github.com/nxp-imx/mfgtools
+
+``ykushcmd``
+    Path to the ykushcmd binary, used by the YKUSHPowerDriver.
+    See: https://github.com/Yepkit/ykush
 
 The QEMUDriver expects a custom key set via its ``qemu_bin`` argument.
 See https://www.qemu.org/

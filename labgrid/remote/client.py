@@ -23,17 +23,18 @@ txaio.use_asyncio()
 from autobahn.asyncio.wamp import ApplicationSession
 
 from .common import (ResourceEntry, ResourceMatch, Place, Reservation, ReservationState, TAG_KEY,
-                     TAG_VAL, enable_tcp_nodelay)
+                     TAG_VAL, enable_tcp_nodelay, monkey_patch_max_msg_payload_size_ws_option)
 from .. import Environment, Target, target_factory
 from ..exceptions import NoDriverFoundError, NoResourceFoundError, InvalidConfigError
 from ..resource.remote import RemotePlaceManager, RemotePlace
-from ..util import diff_dict, flat_dict, filter_dict, dump, atomic_replace, Timeout
+from ..util import diff_dict, flat_dict, filter_dict, dump, atomic_replace, labgrid_version, Timeout
 from ..util.proxy import proxymanager
 from ..util.helper import processwrapper
 from ..driver import Mode, ExecutionError
 from ..logging import basicConfig, StepLogger
 
 txaio.config.loop = asyncio.get_event_loop()  # pylint: disable=no-member
+monkey_patch_max_msg_payload_size_ws_option()
 
 
 class Error(Exception):
@@ -117,13 +118,13 @@ class ClientSession(ApplicationSession):
             group[resource_name].data = resource
         if self.monitor:
             if resource and not old:
-                print(f"Resource {exporter}/{group_name}/{resource_name} created: {resource}")
+                print(f"Resource {exporter}/{group_name}/{resource['cls']}/{resource_name} created: {resource}")
             elif resource and old:
-                print(f"Resource {exporter}/{group_name}/{resource_name} changed:")
+                print(f"Resource {exporter}/{group_name}/{resource['cls']}/{resource_name} changed:")
                 for k, v_old, v_new in diff_dict(flat_dict(old), flat_dict(resource)):
                     print(f"  {k}: {v_old} -> {v_new}")
             else:
-                print(f"Resource {exporter}/{group_name}/{resource_name} deleted")
+                print(f"Resource {exporter}/{group_name}/???/{resource_name} deleted")
 
     async def on_place_changed(self, name, config):
         if not config:
@@ -630,17 +631,17 @@ class ClientSession(ApplicationSession):
         resources = {}
         for resource_path in place.acquired_resources:
             match = place.getmatch(resource_path)
-            (exporter, group_name, _, resource_name) = resource_path
+            (exporter, group_name, cls, resource_name) = resource_path
             name = resource_name
             if match.rename:
                 name = match.rename
-            resources[name] = self.resources[exporter][group_name][resource_name]
+            resources[(name, cls)] = self.resources[exporter][group_name][resource_name]
         return resources
 
     def get_target_config(self, place):
         config = {}
         resources = config['resources'] = []
-        for name, resource in self.get_target_resources(place).items():
+        for (name, _), resource in self.get_target_resources(place).items():
             args = OrderedDict()
             if name != resource.cls:
                 args['name'] = name
@@ -725,13 +726,15 @@ class ClientSession(ApplicationSession):
         target = self._get_target(place)
         from ..resource.power import NetworkPowerPort, PDUDaemonPort
         from ..resource.remote import NetworkUSBPowerPort, NetworkSiSPMPowerPort
-        from ..resource import TasmotaPowerPort
+        from ..resource import TasmotaPowerPort, NetworkYKUSHPowerPort
 
         drv = None
         try:
             drv = target.get_driver("PowerProtocol", name=name)
         except NoDriverFoundError:
             for resource in target.resources:
+                if name and resource.name != name:
+                    continue
                 if isinstance(resource, NetworkPowerPort):
                     drv = self._get_driver_or_new(target, "NetworkPowerDriver", name=name)
                 elif isinstance(resource, NetworkUSBPowerPort):
@@ -742,6 +745,8 @@ class ClientSession(ApplicationSession):
                     drv = self._get_driver_or_new(target, "PDUDaemonDriver", name=name)
                 elif isinstance(resource, TasmotaPowerPort):
                     drv = self._get_driver_or_new(target, "TasmotaPowerDriver", name=name)
+                elif isinstance(resource, NetworkYKUSHPowerPort):
+                    drv = self._get_driver_or_new(target, "YKUSHPowerDriver", name=name)
                 if drv:
                     break
 
@@ -758,7 +763,7 @@ class ClientSession(ApplicationSession):
         action = self.args.action
         name = self.args.name
         target = self._get_target(place)
-        from ..resource import ModbusTCPCoil, OneWirePIO
+        from ..resource import ModbusTCPCoil, OneWirePIO, HttpDigitalOutput
         from ..resource.remote import (NetworkDeditecRelais8, NetworkSysfsGPIO, NetworkLXAIOBusPIO,
                                        NetworkHIDRelay)
 
@@ -771,6 +776,8 @@ class ClientSession(ApplicationSession):
                     drv = self._get_driver_or_new(target, "ModbusCoilDriver", name=name)
                 elif isinstance(resource, OneWirePIO):
                     drv = self._get_driver_or_new(target, "OneWirePIODriver", name=name)
+                elif isinstance(resource, HttpDigitalOutput):
+                    drv = self._get_driver_or_new(target, "HttpDigitalOutputDriver", name=name)
                 elif isinstance(resource, NetworkDeditecRelais8):
                     drv = self._get_driver_or_new(target, "DeditecRelaisDriver", name=name)
                 elif isinstance(resource, NetworkSysfsGPIO):
@@ -806,6 +813,10 @@ class ClientSession(ApplicationSession):
 
         # use zero timeout to prevent blocking sleeps
         target.await_resources([resource], timeout=0.0)
+
+        if not place.acquired:
+            print("place released")
+            return 255
 
         host, port = proxymanager.get_host_and_port(resource)
 
@@ -850,11 +861,14 @@ class ClientSession(ApplicationSession):
         while True:
             res = await self._console(place, target, 10.0, logfile=self.args.logfile,
                                       loop=self.args.loop, listen_only=self.args.listenonly)
-            if res:
-                exc = InteractiveCommandError("microcom error")
-                exc.exitcode = res
-                raise exc
+            # place released
+            if res == 255:
+                break
             if not self.args.loop:
+                if res:
+                    exc = InteractiveCommandError("microcom error")
+                    exc.exitcode = res
+                    raise exc
                 break
             await asyncio.sleep(1.0)
     console.needs_target = True
@@ -1294,6 +1308,9 @@ class ClientSession(ApplicationSession):
         except GeneratorExit:
             print("Exiting...\n", file=sys.stderr)
     export.needs_target = True
+
+    def print_version(self):
+        print(labgrid_version())
 
 
 def start_session(url, realm, extra):
@@ -1786,6 +1803,9 @@ def main():
                            help="output format (default: %(default)s)")
     subparser.add_argument('filename', help='output filename')
     subparser.set_defaults(func=ClientSession.export)
+
+    subparser = subparsers.add_parser('version', help="show version")
+    subparser.set_defaults(func=ClientSession.print_version)
 
     # make any leftover arguments available for some commands
     args, leftover = parser.parse_known_args()

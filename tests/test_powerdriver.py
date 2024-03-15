@@ -244,6 +244,7 @@ class TestNetworkPowerDriver:
         import labgrid.driver.power.apc
         import labgrid.driver.power.digipower
         import labgrid.driver.power.digitalloggers_http
+        import labgrid.driver.power.eth008
         import labgrid.driver.power.gude
         import labgrid.driver.power.gude24
         import labgrid.driver.power.netio
@@ -264,3 +265,7 @@ class TestNetworkPowerDriver:
     def test_import_backend_siglent(self):
         pytest.importorskip("vxi11")
         import labgrid.driver.power.siglent
+
+    def test_import_backend_poe_mib(self):
+        pytest.importorskip("pysnmp")
+        import labgrid.driver.power.poe_mib

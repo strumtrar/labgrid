@@ -1,4 +1,3 @@
-import logging
 import os
 import queue
 import warnings
@@ -19,7 +18,6 @@ class UdevManager(ResourceManager):
         super().__attrs_post_init__()
         self.queue = queue.Queue()
 
-        self.log = logging.getLogger('UdevManager')
         self._pyudev = import_module('pyudev')
         self._context = self._pyudev.Context()
         self._monitor = self._pyudev.Monitor.from_netlink(self._context)
@@ -32,7 +30,7 @@ class UdevManager(ResourceManager):
         devices.match_subsystem(resource.match['SUBSYSTEM'])
         for device in devices:
             if resource.try_match(device):
-                self.log.debug(" matched successfully against %s", resource.device)
+                self.logger.debug(" matched successfully against %s", resource.device)
 
     def _insert_into_queue(self, device):
         self.queue.put(device)
@@ -44,10 +42,10 @@ class UdevManager(ResourceManager):
                 device = self.queue.get(False)
             except queue.Empty:
                 break
-            self.log.debug("%s: %s", device.action, device)
+            self.logger.debug("%s: %s", device.action, device)
             for resource in self.resources:
                 if resource.try_match(device):
-                    self.log.debug(" matched successfully")
+                    self.logger.debug(" matched successfully")
 
 @attr.s(eq=False)
 class USBResource(ManagedResource):
@@ -59,7 +57,6 @@ class USBResource(ManagedResource):
 
     def __attrs_post_init__(self):
         self.timeout = 5.0
-        self.log = logging.getLogger('USBResource')
         self.match.setdefault('SUBSYSTEM', 'usb')
         super().__attrs_post_init__()
 
@@ -94,12 +91,22 @@ class USBResource(ManagedResource):
                 suggestions.append({'@ID_PATH': path})
 
         serial = self.device.properties.get('ID_SERIAL_SHORT')
+        interface_num = self.device.properties.get('ID_USB_INTERFACE_NUM')
         if serial:
-            suggestions.append({'ID_SERIAL_SHORT': serial})
+            if interface_num is not None:
+                suggestions.append({'ID_SERIAL_SHORT': serial,
+                                    'ID_USB_INTERFACE_NUM': interface_num})
+            else:
+                suggestions.append({'ID_SERIAL_SHORT': serial})
         elif self.match.get('@SUBSYSTEM', None) == 'usb':
             serial = self._get_usb_device().properties.get('ID_SERIAL_SHORT')
+            interface_num = self._get_usb_device().properties.get('ID_USB_INTERFACE_NUM')
             if serial:
-                suggestions.append({'@ID_SERIAL_SHORT': serial})
+                if interface_num is not None:
+                    suggestions.append({'@ID_SERIAL_SHORT': serial,
+                                        '@ID_USB_INTERFACE_NUM': interface_num})
+                else:
+                    suggestions.append({'@ID_SERIAL_SHORT': serial})
 
         return meta, suggestions
 
@@ -134,7 +141,7 @@ class USBResource(ManagedResource):
             if self.device.sys_path != device.sys_path:
                 return False
 
-        self.log.debug(" found match: %s", self)
+        self.logger.debug(" found match: %s", self)
 
         if self.suggest and device.action in [None, 'add']:
             self.device = device
@@ -280,6 +287,7 @@ class IMXUSBLoader(USBResource):
                          ("1fc9", "0128"), ("1fc9", "0126"),
                          ("1fc9", "012b"), ("1fc9", "0134"),
                          ("1fc9", "013e"), ("1fc9", "0146"),
+                         ("1fc9", "014e"),
                          ("1b67", "4fff"), ("0525", "b4a4"), # SPL
                          ("3016", "1001"),
                          ]:
@@ -346,6 +354,11 @@ class USBNetworkInterface(USBResource, NetworkInterface):
     def __attrs_post_init__(self):
         self.match['SUBSYSTEM'] = 'net'
         self.match['@SUBSYSTEM'] = 'usb'
+        if self.ifname:
+            warnings.warn(
+                "USBNetworkInterface: The ifname attribute will be overwritten by udev.\n"
+                "Please use udev matching as described in http://labgrid.readthedocs.io/en/latest/configuration.html#udev-matching"  # pylint: disable=line-too-long
+            )
         super().__attrs_post_init__()
 
     def update(self):
@@ -467,15 +480,17 @@ class USBSDWireDevice(USBResource):
     # paths are available.
     def poll(self):
         super().poll()
+        if self.device is not None and not self.avail:
+            for child in self.device.parent.children:
+                if child.subsystem == 'block' and child.device_type == 'disk':
+                    self.disk_path = child.device_node
+            self.control_serial = self.device.properties.get('ID_SERIAL_SHORT')
+
+    def update(self):
+        super().update()
         if self.device is None:
             self.disk_path = None
             self.control_serial = None
-        else:
-            if not self.avail:
-                for child in self.device.parent.children:
-                    if child.subsystem == 'block' and child.device_type == 'disk':
-                        self.disk_path = child.device_node
-                self.control_serial = self.device.properties.get('ID_SERIAL_SHORT')
 
     @property
     def path(self):
@@ -510,16 +525,18 @@ class USBSDMuxDevice(USBResource):
     # paths are available.
     def poll(self):
         super().poll()
+        if self.device is not None and not self.avail:
+            for child in self.device.children:
+                if child.subsystem == 'block' and child.device_type == 'disk':
+                    self.disk_path = child.device_node
+                elif child.subsystem == 'scsi_generic':
+                    self.control_path = child.device_node
+
+    def update(self):
+        super().update()
         if self.device is None:
             self.control_path = None
             self.disk_path = None
-        else:
-            if not self.avail:
-                for child in self.device.children:
-                    if child.subsystem == 'block' and child.device_type == 'disk':
-                        self.disk_path = child.device_node
-                    elif child.subsystem == 'scsi_generic':
-                        self.control_path = child.device_node
 
     @property
     def path(self):
@@ -687,11 +704,16 @@ class USBDebugger(USBResource):
         match = (device.properties.get('ID_VENDOR_ID'), device.properties.get('ID_MODEL_ID'))
 
         if match not in [("0403", "6010"),  # FT2232C/D/H Dual UART/FIFO IC
+                         ("0483", "374b"),  # STLINK-V3
                          ("0483", "374f"),  # STLINK-V3
                          ("15ba", "0003"),  # Olimex ARM-USB-OCD
                          ("15ba", "002b"),  # Olimex ARM-USB-OCD-H
                          ("15ba", "0004"),  # Olimex ARM-USB-TINY
                          ("15ba", "002a"),  # Olimex ARM-USB-TINY-H
+                         ("1366", "0101"),  # SEGGER J-Link PLUS
+                         ("1366", "0105"),  # SEGGER J-Link
+                         ("1366", "1015"),  # SEGGER J-Link
+                         ("1366", "1051"),  # SEGGER J-Link
                          ]:
             return False
 

@@ -1,7 +1,7 @@
-Release 23.1 (unreleased)
-------------------------------------
+Release 24.0 (unreleased)
+-------------------------
 
-New Features in 23.1
+New Features in 24.0
 ~~~~~~~~~~~~~~~~~~~~
 - When invoking tests with pytest, the ``--log-(cli|file)-(level|format)``
   command line arguments and their corresponding pytest.ini configure options
@@ -10,8 +10,10 @@ New Features in 23.1
 - A new log level called ``CONSOLE`` has been added between the default
   ``INFO`` and ``DEBUG`` levels. This level will show all reads and writes made
   to the serial console during testing.
+- The `QEMUDriver` now has an additional ``disk_opts`` property which can be
+  used to pass additional options for the disk directly to QEMU
 
-Bug fixes in 23.1
+Bug fixes in 24.0
 ~~~~~~~~~~~~~~~~~
 - The pypi release now uses the labgrid pyserial fork in the form of the
   pyserial-labgrid package. This fixes installation with newer versions
@@ -23,15 +25,27 @@ Bug fixes in 23.1
   ERROR, INFO and similar log notifiers.
 - Fix named SSH lookups in conjunction with an environment file in
   labgrid-client.
+- Fix sftp option issue in SSH driver that caused sftp to only work once per
+  test run.
+- ManagedFile NFS detection heuristic now does symlink resolution on the
+  local host.
+- The password for the ShellDriver can now be an empty string.
 
-Breaking changes in 23.1
-~~~~~~~~~~~~~~~~~~~~~~~~~
+Breaking changes in 24.0
+~~~~~~~~~~~~~~~~~~~~~~~~
+- Support for the legacy ticket authentication was dropped: If the coordinator
+  logs ModuleNotFoundError on startup, switch the crossbar config to anonymous
+  authentication (see ``.crossbar/config-anonymous.yaml`` for an example).
 - The Debian package (``debian/``) no longer contains crossbar. Use the
   `coordinator container <https://hub.docker.com/r/labgrid/coordinator>`_ or
-  install it into a separate local venv as desribed in the
+  install it into a separate local venv as described in the
   `documentation <https://labgrid.readthedocs.io/en/latest/getting_started.html#coordinator>`_.
+  If you see ``WARNING: Ticket authentication is deprecated. Please update your
+  coordinator.`` on the client when running an updated coordinator, your
+  coordinator configuration may set ``ticket`` instead of ``anonymous`` auth.
 - The `StepReporter` API has been changed. To start step reporting, you must
-  now call ``StepReporter.start()`` instead of ``StepReporter()``
+  now call ``StepReporter.start()`` instead of ``StepReporter()``, and set up
+  logging via ``labgrid.logging.basicConfig()``.
 - Logging output when running pytest is no longer sent to stderr by default,
   since this is both chatty and also unnecessary with the improved logging
   flexibility. It it recommended to use the ``--log-cli-level=INFO`` command
@@ -54,8 +68,17 @@ Breaking changes in 23.1
   slightly. ``-vv`` is now an alias for ``--log-cli-level=INFO`` (effectively
   unchanged), ``-vvv`` is an alias for ``--log-cli-level=CONSOLE``, and
   ``-vvvv`` is an alias for ``--log-cli-level=DEBUG``.
+- The `BareboxDriver` now remembers the log level, sets it to ``0`` on initial
+  activation/reset and recovers it on ``boot()``. During
+  ``run()``/``run_check()`` the initially detected log level is used.
+- The `NFSProviderDriver` now returns mount and path information on ``stage()``
+  instead of the path to be used on the target. The previous return value did
+  not fit the NFS mount use case.
+- The `NFSProvider` and `RemoteNFSProvider` resources no longer expect the
+  ``internal`` and ``external`` arguments as they do not fit the NFS mount use
+  case.
 
-Known issues in 23.1
+Known issues in 24.0
 ~~~~~~~~~~~~~~~~~~~~
 
 
@@ -166,7 +189,7 @@ Bug fixes in 23.0
   evaluation.
 
 Breaking changes in 23.0
-~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~
 - ``Config``'s ``get_option()``/``get_target_option()`` convert non-string
   options no longer to strings.
 - `UBootDriver`'s ``boot_expression`` attribute is deprecated, it will no
@@ -246,7 +269,7 @@ Breaking changes in 0.4.0
 - ``EthernetInterface`` has been renamed to ``NetworkInterface``.
 
 Known issues in 0.4.0
-~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
 - Some client commands return 0 even if the command failed.
 - Currently empty passwords are not well supported by the ShellDriver
 
@@ -343,7 +366,7 @@ Breaking changes in 0.3.0
   reasons.
 
 Known issues in 0.3.0
-~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
 - There are several reports of ``sshpass`` used within the SSHDriver not working
   in call cases or only on the first connection.
 - Some client commands return 0 even if the command failed.

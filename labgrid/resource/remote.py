@@ -1,4 +1,4 @@
-import logging
+import copy
 import os
 import attr
 
@@ -10,7 +10,6 @@ from .common import NetworkResource, ManagedResource, ResourceManager
 class RemotePlaceManager(ResourceManager):
     def __attrs_post_init__(self):
         super().__attrs_post_init__()
-        self.logger = logging.getLogger(f"{self}")
         self.url = None
         self.realm = None
         self.loop = None
@@ -50,7 +49,7 @@ class RemotePlaceManager(ResourceManager):
         place = self.session.get_place(remote_place.name)  # pylint: disable=no-member
         resource_entries = self.session.get_target_resources(place)  # pylint: disable=no-member
         expanded = []
-        for resource_name, resource_entry in resource_entries.items():
+        for (resource_name, _), resource_entry in resource_entries.items():
             new = target_factory.make_resource(
                 remote_place.target, resource_entry.cls, resource_name, resource_entry.args)
             new.parent = remote_place
@@ -62,6 +61,7 @@ class RemotePlaceManager(ResourceManager):
             expanded.append(new)
         self.logger.debug("expanded remote resources for place %s: %s", remote_place.name, expanded)
         remote_place.avail = True
+        remote_place.tags = copy.deepcopy(place.tags)
 
     def poll(self):
         import asyncio
@@ -97,6 +97,7 @@ class RemotePlace(ManagedResource):
 
     def __attrs_post_init__(self):
         self.timeout = 10.0
+        self.tags = {}
         super().__attrs_post_init__()
 
 @attr.s(eq=False)
@@ -400,7 +401,7 @@ class RemoteTFTPProvider(RemoteBaseProvider):
 
 @target_factory.reg_resource
 @attr.s(eq=False)
-class RemoteNFSProvider(RemoteBaseProvider):
+class RemoteNFSProvider(NetworkResource):
     pass
 
 

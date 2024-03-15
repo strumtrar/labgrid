@@ -1,3 +1,4 @@
+import logging
 import subprocess
 import attr
 
@@ -24,6 +25,11 @@ class Driver(BindingMixin):
         super().__attrs_post_init__()
         if self.target is None:
             raise BindingError("Drivers can only be created on a valid target")
+
+        logger_name = f"{self.__class__.__name__}({self.target.name})"
+        if self.name:
+            logger_name += f":{self.name}"
+        self.logger = logging.getLogger(logger_name)
 
     def get_priority(self, protocol):
         """Retrieve the priority for a given protocol
@@ -66,6 +72,16 @@ class Driver(BindingMixin):
         return True here.
         """
         return False
+
+    def get_bound_resources(self):
+        """Return the bound resources for a driver
+
+        This recursively calls all suppliers and combines the sets of returned resources.
+        """
+        res = set()
+        for supplier in self.suppliers:
+            res |= supplier.get_bound_resources()
+        return res
 
 def check_file(filename, *, command_prefix=[]):
     if subprocess.call(command_prefix + ['test', '-r', filename]) != 0:

@@ -18,6 +18,9 @@ readme = "README.rst"
 license = { file="LICENSE" }
 requires-python = ">=3.8"
 classifiers = [
+    "Intended Audience :: Developers",
+    "Development Status :: 5 - Production/Stable",
+    "Operating System :: POSIX :: Linux",
     "Topic :: Software Development :: Testing",
     "Framework :: Pytest",
     "Programming Language :: Python :: 3 :: Only",
@@ -25,6 +28,7 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: GNU Lesser General Public License v2 or later (LGPLv2+)",
 ]
 dependencies = [
     "ansicolors>=1.1.8",
@@ -35,7 +39,7 @@ dependencies = [
     "pytest>=7.0.0",
     "pyudev>=0.22.0",
     "pyusb>=1.2.1",
-    "PyYAML>=5.4.1",
+    "PyYAML>=6.0.1",
     "requests>=2.26.0",
     "xmodem>=0.4.6",
 ]
@@ -46,22 +50,22 @@ dynamic = ["version"]  # via setuptools_scm
 "Bug Tracker" = "https://github.com/labgrid-project/labgrid/issues"
 
 [project.optional-dependencies]
-doc = ["sphinx_rtd_theme>=1.0.0"]
+doc = [
+    "sphinx_rtd_theme>=1.0.0",
+    "Sphinx>=2.0.0",
+]
 docker = ["docker>=5.0.2"]
 graph = ["graphviz>=0.17.0"]
 kasa = ["python-kasa>=0.4.0"]
-modbus = ["pyModbusTCP>=0.1.10"]
+modbus = ["pyModbusTCP>=0.2.0"]
 modbusrtu = ["minimalmodbus>=1.0.2"]
-mqtt = ["paho-mqtt>=1.5.1"]
+mqtt = ["paho-mqtt>=2.0.0"]
 onewire = ["onewire>=0.2"]
 pyvisa = [
     "pyvisa>=1.11.3",
     "PyVISA-py>=0.5.2",
 ]
-snmp = [
-    "pysnmp>=4.4.12",
-    "pysnmp-mibs>=0.1.6",
-]
+snmp = ["pysnmp-lextudio>=4.4.12, <6"]
 vxi11 = ["python-vxi11>=0.9"]
 xena = ["xenavalkyrie>=3.0.1"]
 deb = [
@@ -72,13 +76,13 @@ deb = [
     "onewire>=0.2",
 
     # labgrid[snmp]
-    "pysnmp>=4.4.12",
-    "pysnmp-mibs>=0.1.6",
+    "pysnmp-lextudio>=4.4.12, <6",
 ]
 dev = [
     # references to other optional dependency groups
     # labgrid[doc]
     "sphinx_rtd_theme>=1.0.0",
+    "Sphinx>=2.0.0",
 
     # labgrid[docker]
     "docker>=5.0.2",
@@ -96,7 +100,7 @@ dev = [
     "minimalmodbus>=1.0.2",
 
     # labgrid[mqtt]
-    "paho-mqtt>=1.5.1",
+    "paho-mqtt>=2.0.0",
 
     # labgrid[onewire]
     "onewire>=0.2",
@@ -106,8 +110,7 @@ dev = [
     "PyVISA-py>=0.5.2",
 
     # labgrid[snmp]
-    "pysnmp>=4.4.12",
-    "pysnmp-mibs>=0.1.6",
+    "pysnmp-lextudio>=4.4.12, <6",
 
     # labgrid[vxi11]
     "python-vxi11>=0.9",
@@ -118,7 +121,7 @@ dev = [
     "pytest-dependency>=0.5.1",
     "pytest-isort>=2.0.0",
     "pytest-mock>=3.6.1",
-    "pytest-pylint>=0.18.0",
+    "pylint>=3.0.0",
 ]
 
 [project.scripts]
@@ -156,9 +159,6 @@ testpaths = [
     "labgrid",
 ]
 addopts = "-p no:labgrid"
-
-[tool.pylint.MASTER]
-ignore-paths = ["labgrid/remote/authenticator.py"]
 
 [tool.pylint.imports]
 ignored-modules = ["gi"]
@@ -215,7 +215,7 @@ signature-mutators = ["labgrid.step.step"]
 [tool.tox]
 legacy_tox_ini = """
 [tox]
-envlist = py37, py38, py39, py310, py311
+envlist = py38, py39, py310, py311
 isolated_build = true
 
 [testenv]

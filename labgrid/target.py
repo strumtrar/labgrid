@@ -140,21 +140,21 @@ class Target:
             name_msg = f" named '{name}'" if name else ""
             if other_names:
                 raise NoResourceFoundError(
-                    f"no {cls} resource{name_msg} found in {self}, matching resources with other names: {other_names}"  # pylint: disable=line-too-long
+                    f"no {cls.__name__} resource{name_msg} found in {self}, matching resources with other names: {other_names}"  # pylint: disable=line-too-long
                 )
 
             raise NoResourceFoundError(
-                f"no {cls} resource{name_msg} found in {self}"
+                f"no {cls.__name__} resource{name_msg} found in {self}"
             )
         elif len(found) > 1:
             raise NoResourceFoundError(
-                f"multiple resources matching {cls} found in {self}", found=found
+                f"multiple resources matching {cls.__name__} found in {self}", found=found
             )
         if wait_avail:
             self.await_resources(found)
         return found[0]
 
-    def _get_driver(self, cls, *, name=None, activate=True, active=False):
+    def _get_driver(self, cls, *, name=None, resource=None, activate=True, active=False):
         assert not (activate is True and active is True)
 
         found = []
@@ -164,6 +164,8 @@ class Target:
 
         for drv in self.drivers:
             if not isinstance(drv, cls):
+                continue
+            if resource and resource not in drv.get_bound_resources():
                 continue
             if name and drv.name != name:
                 other_names.append(drv.name)
@@ -176,12 +178,12 @@ class Target:
             if other_names:
                 raise NoDriverFoundError(
                     "no {active}{cls} driver{name} found in {target}, matching resources with other names: {other_names}".format(  # pylint: disable=line-too-long
-                        active="active " if active else "", cls=cls, name=name_msg, target=self,
-                        other_names=other_names)
+                        active="active " if active else "", cls=cls.__name__, name=name_msg,
+                        target=self, other_names=other_names)
                 )
 
             raise NoDriverFoundError(
-                f"no {'active ' if active else ''}{cls} driver{name_msg} found in {self}"
+                f"no {'active ' if active else ''}{cls.__name__} driver{name_msg} found in {self}"
             )
         elif len(found) > 1:
             prio_last = -255
@@ -200,13 +202,13 @@ class Target:
             else:
                 raise NoDriverFoundError(
                     "multiple {active}drivers matching {cls} found in {target} with the same priorities".format(  # pylint: disable=line-too-long
-                        active="active " if active else "", cls=cls, target=self)
+                        active="active " if active else "", cls=cls.__name__, target=self)
                 )
         if activate:
             self.activate(found[0])
         return found[0]
 
-    def get_active_driver(self, cls, *, name=None):
+    def get_active_driver(self, cls, *, name=None, resource=None):
         """
         Helper function to get the active driver of the target.
         Returns the active driver found, otherwise None.
@@ -214,10 +216,11 @@ class Target:
         Arguments:
         cls -- driver-class to return as a resource
         name -- optional name to use as a filter
+        resource -- optional resource to use as a filter
         """
-        return self._get_driver(cls, name=name, activate=False, active=True)
+        return self._get_driver(cls, name=name, resource=resource, activate=False, active=True)
 
-    def get_driver(self, cls, *, name=None, activate=True):
+    def get_driver(self, cls, *, name=None, resource=None, activate=True):
         """
         Helper function to get a driver of the target.
         Returns the first valid driver found, otherwise None.
@@ -225,9 +228,10 @@ class Target:
         Arguments:
         cls -- driver-class to return as a resource
         name -- optional name to use as a filter
+        resource -- optional resource to use as a filter
         activate -- activate the driver (default True)
         """
-        return self._get_driver(cls, name=name, activate=activate)
+        return self._get_driver(cls, name=name, resource=resource, activate=activate)
 
     def get_strategy(self):
         """
@@ -272,7 +276,7 @@ class Target:
             cls = target_factory.class_from_string(cls)
         if not issubclass(cls, (Driver, abc.ABC)): # all Protocols derive from ABC
             raise NoDriverFoundError(
-                f"invalid driver class {cls}"
+                f"invalid driver class {cls.__name__}"
             )
 
         return self.get_active_driver(cls, name=name)
@@ -366,13 +370,16 @@ class Target:
                 except NoSupplierFoundError as e:
                     errors.append(e)
             if not suppliers:
+                client_name = client.name or client.__class__.__name__
                 if optional:
                     supplier = None
                 elif len(errors) == 1:
-                    raise errors[0]
+                    err = errors[0]
+                    err_cls = type(err)
+                    raise err_cls(f"binding {client_name} failed: {err}") from err
                 else:
                     raise NoSupplierFoundError(
-                        f"no supplier matching {requirements} found in {self} (errors: {errors})"
+                        f"binding {client_name} failed: no supplier matching {requirements} found in {self} (errors: {errors})"
                     )
             elif len(suppliers) > 1:
                 raise NoSupplierFoundError(f"conflicting suppliers matching {requirements} found in target {self}")  # pylint: disable=line-too-long
