@@ -526,6 +526,48 @@ NetworkHIDRelay
 +++++++++++++++
 A :any:`NetworkHIDRelay` describes an `HIDRelay`_ exported over the network.
 
+SysfsGPIO
++++++++++
+
+A :any:`SysfsGPIO` resource describes a GPIO line.
+
+.. code-block:: yaml
+
+   SysfsGPIO:
+     index: 12
+
+Arguments:
+  - index (int): index of the GPIO line
+
+Used by:
+  - `GpioDigitalOutputDriver`_
+
+MatchedSysfsGPIO
+++++++++++++++++
+A :any:`MatchedSysfsGPIO` describes a GPIO line, like a `SysfsGPIO`_.
+The gpiochip is identified by matching udev properties. This allows
+identification through hot-plugging or rebooting for controllers like
+USB based gpiochips.
+
+.. code-block:: yaml
+
+   MatchedSysfsGPIO:
+     match:
+       '@SUBSYSTEM': 'usb'
+       '@ID_SERIAL_SHORT': 'D38EJ8LF'
+     pin: 0
+
+The example would search for a USB gpiochip with the key `ID_SERIAL_SHORT`
+and the value `D38EJ8LF` and use the pin 0 of this device.
+The `ID_SERIAL_SHORT` property is set by the usb_id builtin helper program.
+
+Arguments:
+  - match (dict): key and value pairs for a udev match, see `udev Matching`_
+  - pin (int): gpio pin number within the matched gpiochip.
+
+Used by:
+  - `GpioDigitalOutputDriver`_
+
 NetworkService
 ~~~~~~~~~~~~~~
 A :any:`NetworkService` describes a remote SSH connection.
@@ -568,6 +610,14 @@ device.
      match:
        ID_PATH: 'pci-0000:06:00.0-usb-0:1.3.2:1.0-scsi-0:0:0:3'
 
+Writing images to disk requires installation of ``dd`` or optionally
+``bmaptool`` on the same system as the block device.
+
+For mounting the file system and writing into it,
+`PyGObject <https://pygobject.readthedocs.io/>`_ must be installed.
+For Debian, the necessary packages are `python3-gi` and `gir1.2-udisks-2.0`.
+This is not required for writing images to disks.
+
 Arguments:
   - match (dict): key and value pairs for a udev match, see `udev Matching`_
 
@@ -580,7 +630,7 @@ A :any:`NetworkUSBMassStorage` resource describes a USB memory stick or similar
 device available on a remote computer.
 
 The NetworkUSBMassStorage can be used in test cases by calling the
-``write_image()``, and ``get_size()`` functions.
+``write_files()``, ``write_image()``, and ``get_size()`` functions.
 
 SigrokDevice
 ~~~~~~~~~~~~
@@ -958,21 +1008,6 @@ Arguments:
 Used by:
   - `USBVideoDriver`_
 
-SysfsGPIO
-~~~~~~~~~
-A :any:`SysfsGPIO` resource describes a GPIO line.
-
-.. code-block:: yaml
-
-   SysfsGPIO:
-     index: 12
-
-Arguments:
-  - index (int): index of the GPIO line
-
-Used by:
-  - `GpioDigitalOutputDriver`_
-
 NetworkUSBVideo
 ~~~~~~~~~~~~~~~
 A :any:`NetworkUSBVideo` resource describes a `USBVideo`_ resource available
@@ -1160,6 +1195,7 @@ Arguments:
     ASRL, TCPIP...
   - url (str): device identifier on selected resource, e.g. <ip> for TCPIP
     resource
+  - backend (str): Visa library backend, e.g. '@sim' for pyvisa-sim backend
 
 Used by:
   - `PyVISADriver`_
@@ -2141,6 +2177,7 @@ While the driver automatically exports the GPIO, it does not configure it in any
 Binds to:
   gpio:
     - `SysfsGPIO`_
+    - `MatchedSysfsGPIO`_
     - NetworkSysfsGPIO
 
 Implements:
@@ -2456,7 +2493,7 @@ Implements:
        drivers:
          UUUDriver:
            image: 'mybootloaderkey'
-           cmd: 'spl'
+           script: 'spl'
 
    images:
      mybootloaderkey: 'path/to/mybootloader.img'
@@ -2464,7 +2501,7 @@ Implements:
 Arguments:
   - image (str): optional, key in :ref:`images <labgrid-device-config-images>` containing the path
     of an image to bootstrap onto the target
-  - script (str): run built-in script with ``uuu -b``, called with image as arg0
+  - script (str): optional, run built-in script with ``uuu -b``, called with image as arg0
 
 USBStorageDriver
 ~~~~~~~~~~~~~~~~
