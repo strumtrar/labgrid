@@ -112,7 +112,7 @@ class SSHDriver(CommandMixin, Driver, CommandProtocol, FileTransferProtocol):
             self.tmpdir, f'control-{self.networkservice.address}'
         )
 
-        args = [self._ssh, "-f", *self.ssh_prefix, "-x", "-o", f"ConnectTimeout={timeout}",
+        args = [self._ssh, "-f", *self.ssh_prefix, "-F", "~/.ssh/config", "-x", "-o", f"ConnectTimeout={timeout}",
                  "-o", "ControlPersist=300", "-o",
                  "UserKnownHostsFile=/dev/null", "-o", "StrictHostKeyChecking=no",
                  "-o", "ServerAliveInterval=15", "-MN", "-S", control.replace('%', '%%'), "-p",
