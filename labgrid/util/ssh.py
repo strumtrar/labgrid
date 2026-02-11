@@ -150,7 +150,7 @@ class SSHConnection:
 
     @staticmethod
     def _get_ssh_base_args():
-        return ["-x", "-o", "LogLevel=ERROR", "-o", "PasswordAuthentication=no"]
+        return ["-F", "/home/str/.ssh/config", "-x", "-o", "LogLevel=ERROR", "-o", "PasswordAuthentication=no"]
 
     def _get_ssh_control_args(self):
         if self._socket:
