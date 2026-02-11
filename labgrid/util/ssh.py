@@ -433,7 +433,7 @@ class SSHConnection:
         self._logger.debug("ControlSocket: %s", control)
         args = ["ssh"] + SSHConnection._get_ssh_base_args()
         args += [
-            "-F", "~/.ssh/config",
+            "-F", "/home/str/.ssh/config",
             "-n", "-MN",
             "-o", f"ConnectTimeout={connect_timeout}",
             "-o", "ControlPersist=300",
